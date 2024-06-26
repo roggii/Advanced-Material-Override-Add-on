@@ -1,0 +1,20 @@
+schema_version = "1.0.0"
+
+id = "advanced_material_override_cycles_style"
+version = "1.0.0"
+name = "Advanced Material Override"
+tagline = "Dynamic material override with exclude list in Properties panel"
+maintainer = "Nana Beniako <nanayawbeniako@gmail.com>"
+type = "add-on"
+
+tags = ["Material", "Rendering"]
+
+blender_version_min = "3.0.0"
+
+license = [
+  "SPDX:GPL-3.0-or-later",
+]
+
+copyright = [
+  "2024 Nana Beniako",
+]
