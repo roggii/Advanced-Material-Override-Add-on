@@ -135,9 +135,14 @@ def tag_objects_with_generic_material(scene):
         return
 
     for obj in get_all_objects(scene):
-        if obj.type == 'MESH' and len(obj.material_slots) == 0:
-            obj.data.materials.append(generic_material)
-            print(f"Assigned Generic material to {obj.name}")
+        if obj.type == 'MESH':
+            if len(obj.material_slots) == 0:
+                obj.data.materials.append(generic_material)
+                print(f"Assigned Generic material to {obj.name}")
+            else:
+                if not any(slot.material for slot in obj.material_slots):
+                    obj.material_slots[0].material = generic_material
+                    print(f"Assigned Generic material to {obj.name}")
 
 class OBJECT_OT_apply_advanced_material_override(bpy.types.Operator):
     """Apply Advanced Material Override"""
@@ -287,9 +292,8 @@ def register():
 
     bpy.app.handlers.load_post.append(load_post_handler)
 
-    # Create the "Generic" material and tag objects without materials on addon registration
-    create_generic_material()
-    tag_objects_with_generic_material(bpy.context.scene)
+    # Delayed creation of the "Generic" material to ensure Blender is fully initialized
+    bpy.app.timers.register(create_generic_material)
 
 def unregister():
     bpy.utils.unregister_class(MaterialExcludeItem)
