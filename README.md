@@ -1,5 +1,8 @@
+<<<<<<< HEAD
 # Advanced Material Override Addon
 
+=======
+>>>>>>> a358301912c3a0b584aa9bb8c2f8086c0ebe5872
 ## Description
 The Advanced Material Override addon provides dynamic material overrides with an exclude list in the Properties panel for Blender.
 
@@ -21,9 +24,3 @@ The Advanced Material Override addon provides dynamic material overrides with an
 3. Add materials to exclude from the override.
 4. Click `Apply Override` to apply the override material.
 5. Click `Cancel Override` to restore the original materials.
-
-## License
-This addon is licensed under the MIT License. See the LICENSE file for details.
-
-## Author
-Nana Beniako
