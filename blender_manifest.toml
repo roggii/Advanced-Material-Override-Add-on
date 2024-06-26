@@ -3,7 +3,7 @@ schema_version = "1.0.0"
 id = "advanced_material_override_cycles_style"
 version = "1.0.0"
 name = "Advanced Material Override"
-tagline = "Dynamic material override with exclude list in Properties panel"
+tagline = "Dynamic material override with exclude list"
 maintainer = "Nana Beniako <nanayawbeniako@gmail.com>"
 type = "add-on"
 
