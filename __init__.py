@@ -157,10 +157,10 @@ class OBJECT_OT_apply_advanced_material_override(bpy.types.Operator):
 
     def execute(self, context):
         global override_active
+        tag_objects_with_generic_material(context.scene)  # Tag objects with Generic material
         store_original_materials(context.scene)
         override_active = True
         apply_override_material(context.scene)
-        tag_objects_with_generic_material(context.scene)  # Tag objects with Generic material
         context.view_layer.update()
         print("Override applied")
         return {'FINISHED'}
