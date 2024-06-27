@@ -51,12 +51,12 @@ def get_all_objects(scene):
 def get_instance_definition_objects():
     instance_definitions_collection = bpy.data.collections.get("Instance Definitions")
     if instance_definitions_collection:
-        return [obj for obj in instance_definitions_collection.all_objects if obj.type == 'MESH']
+        return [obj for obj in instance_definitions_collection.all_objects if obj.type in {'MESH', 'CURVE'}]
     return []
 
 def store_original_materials(objects):
     for obj in objects:
-        if obj.type == 'MESH' and "_original_materials" not in obj:
+        if obj.type in {'MESH', 'CURVE'} and "_original_materials" not in obj:
             materials = [slot.material.name if slot.material else None for slot in obj.material_slots]
             obj["_original_materials"] = json.dumps(materials)
             for slot in obj.material_slots:
@@ -64,17 +64,41 @@ def store_original_materials(objects):
                     slot.material.use_fake_user = True
             print(f"Stored original materials for {obj.name}: {materials}")
 
+            # Handle geometry nodes materials
+            geom_node_materials = []
+            for modifier in obj.modifiers:
+                if modifier.type == 'NODES' and modifier.node_group:
+                    node_group = modifier.node_group
+                    for node in node_group.nodes:
+                        if node.type == 'SET_MATERIAL':
+                            material = node.inputs['Material'].default_value
+                            if material:
+                                geom_node_materials.append(material.name)
+                                material.use_fake_user = True
+            obj["_original_geom_node_materials"] = json.dumps(geom_node_materials)
+
 def apply_override_material(objects, override_material, exclude_materials):
     for obj in objects:
-        if obj.type == 'MESH':
+        if obj.type in {'MESH', 'CURVE'}:
             for slot in obj.material_slots:
                 if slot.material not in exclude_materials and slot.material != override_material:
                     slot.material = override_material
             print(f"Applied override material to {obj.name}")
 
+            # Handle geometry nodes materials
+            for modifier in obj.modifiers:
+                if modifier.type == 'NODES' and modifier.node_group:
+                    node_group = modifier.node_group
+                    for node in node_group.nodes:
+                        if node.type == 'SET_MATERIAL':
+                            material = node.inputs['Material'].default_value
+                            if material and material not in exclude_materials:
+                                node.inputs['Material'].default_value = override_material
+                                print(f"Applied override material to Set Material node in {obj.name}")
+
 def revert_original_materials(objects):
     for obj in objects:
-        if obj.type == 'MESH' and "_original_materials" in obj:
+        if obj.type in {'MESH', 'CURVE'} and "_original_materials" in obj:
             original_materials = json.loads(obj["_original_materials"])
             for i, mat_name in enumerate(original_materials):
                 if mat_name:
@@ -83,6 +107,19 @@ def revert_original_materials(objects):
                         obj.material_slots[i].material.use_fake_user = False
             print(f"Reverted materials for {obj.name} to {original_materials}")
             del obj["_original_materials"]
+
+            # Handle geometry nodes materials
+            if "_original_geom_node_materials" in obj:
+                original_geom_node_materials = json.loads(obj["_original_geom_node_materials"])
+                for modifier in obj.modifiers:
+                    if modifier.type == 'NODES' and modifier.node_group:
+                        node_group = modifier.node_group
+                        for node in node_group.nodes:
+                            if node.type == 'SET_MATERIAL':
+                                original_mat_name = original_geom_node_materials.pop(0)
+                                node.inputs['Material'].default_value = bpy.data.materials.get(original_mat_name)
+                                print(f"Reverted Set Material node in {obj.name} to {original_mat_name}")
+                del obj["_original_geom_node_materials"]
 
 def pre_render_handler(scene):
     all_objects = get_all_objects(scene) + get_instance_definition_objects()
@@ -129,7 +166,7 @@ def tag_objects_with_generic_material(objects):
         return
 
     for obj in objects:
-        if obj.type == 'MESH':
+        if obj.type in {'MESH', 'CURVE'}:
             if len(obj.material_slots) == 0:
                 obj.data.materials.append(generic_material)
                 print(f"Assigned Generic material to {obj.name}")
@@ -164,14 +201,14 @@ def copy_instanced_collections_to_new_collection():
             with bpy.context.temp_override(**override_context):
                 bpy.ops.object.select_all(action='DESELECT')
                 for instance_obj in instance_collection_copy.objects:
-                    if instance_obj.type == 'MESH':  # Only include mesh objects
+                    if instance_obj.type in {'MESH', 'CURVE'}:  # Include mesh and curve objects
                         instance_obj.select_set(True)
                 bpy.ops.object.make_local(type='ALL')
 
             # Store original materials right after making instances real
             store_original_materials(instance_collection_copy.objects)
 
-            all_objects.extend([instance_obj for instance_obj in instance_collection_copy.objects if instance_obj.type == 'MESH'])
+            all_objects.extend([instance_obj for instance_obj in instance_collection_copy.objects if instance_obj.type in {'MESH', 'CURVE'}])
             print(f"Copied and linked instance collection: {obj.name}")
 
     store_original_materials(all_objects)
@@ -213,7 +250,7 @@ class OBJECT_OT_cancel_advanced_material_override(bpy.types.Operator):
 
     @classmethod
     def poll(cls, context):
-        return override_active or any("_original_materials" in obj for obj in context.scene.objects if obj.type == 'MESH')
+        return override_active or any("_original_materials" in obj for obj in context.scene.objects if obj.type in {'MESH', 'CURVE'})
 
     def execute(self, context):
         global override_active
