@@ -10,7 +10,7 @@ bl_info = {
     "category": "Material",
     "version": (1, 0, 0),
     "author": "Nana Beniako",
-    "description": "Dynamic material override with exclude list in Properties panel",
+    "description": "Dynamic material override with exclude list in material properties panel",
     "location": "Properties > Material Properties",
     "support": "COMMUNITY"
 }
@@ -41,110 +41,39 @@ class MATERIAL_UL_override_exclude(bpy.types.UIList):
             layout.alignment = 'CENTER'
             layout.label(text=item.material.name, icon='MATERIAL')
 
-def get_all_objects_recursive(collection, include_instance_collections=True):
-    all_objects = []
-    for obj in collection.objects:
-        all_objects.append(obj)
-        if include_instance_collections and obj.instance_collection:
-            all_objects.extend(get_all_objects_recursive(obj.instance_collection, include_instance_collections=False))
+def get_all_objects(scene):
+    all_objects = list(scene.objects)
+    for obj in scene.objects:
+        if obj.instance_collection:
+            all_objects.extend(obj.instance_collection.objects)
     return all_objects
 
-def get_all_objects(data_block):
-    all_objects = []
-    if isinstance(data_block, bpy.types.Scene):
-        all_objects = get_all_objects_recursive(data_block.collection)
-        for obj in data_block.objects:
-            if obj.instance_collection:
-                all_objects.extend(get_all_objects_recursive(obj.instance_collection))
-    elif isinstance(data_block, bpy.types.Collection):
-        all_objects = get_all_objects_recursive(data_block)
-    return all_objects
+def get_instance_definition_objects():
+    instance_definitions_collection = bpy.data.collections.get("Instance Definitions")
+    if instance_definitions_collection:
+        return [obj for obj in instance_definitions_collection.all_objects if obj.type == 'MESH']
+    return []
 
-def create_instance_definition_collection(scene):
-    if "Instance Definition" in bpy.data.collections:
-        bpy.data.collections.remove(bpy.data.collections["Instance Definition"], do_unlink=True)
-    new_collection = bpy.data.collections.new(name="Instance Definition")
-    scene.collection.children.link(new_collection)
-    hide_collection(new_collection, True)
-    return new_collection
-
-def find_layer_collection(layer_collection, collection_name):
-    if layer_collection.name == collection_name:
-        return layer_collection
-    for layer in layer_collection.children:
-        found = find_layer_collection(layer, collection_name)
-        if found:
-            return found
-    return None
-
-def hide_collection(collection, hide):
-    for view_layer in bpy.context.scene.view_layers:
-        layer_collection = view_layer.layer_collection
-        instance_def_collection = find_layer_collection(layer_collection, collection.name)
-        if instance_def_collection:
-            instance_def_collection.exclude = hide
-            instance_def_collection.hide_viewport = hide
-
-def duplicate_instance_collections_to_collection(source_scene, target_collection):
-    bpy.ops.object.select_all(action='DESELECT')
-    for obj in source_scene.objects:
-        if obj.instance_collection and obj.name not in target_collection.objects:
-            obj.select_set(True)
-            bpy.context.view_layer.objects.active = obj
-            bpy.ops.object.duplicate(linked=False)
-            for new_obj in bpy.context.selected_objects:
-                if new_obj.name not in target_collection.objects:
-                    target_collection.objects.link(new_obj)
-                    source_scene.collection.objects.unlink(new_obj)
-                    print(f"Duplicated {new_obj.name} to Instance Definition collection")
-            bpy.ops.object.select_all(action='DESELECT')
-
-def make_instances_real_in_collection(collection):
-    hide_collection(collection, False)
-    bpy.ops.object.select_all(action='DESELECT')
-    for obj in collection.objects:
-        obj.select_set(True)
-    bpy.context.view_layer.objects.active = collection.objects[0]
-    bpy.ops.object.duplicates_make_real()
-    hide_collection(collection, True)
-    print("Made all instances real in Instance Definition collection")
-
-def store_original_materials(scene):
-    all_objects = get_all_objects(scene)
-    for obj in all_objects:
-        if obj.type == 'MESH':
+def store_original_materials(objects):
+    for obj in objects:
+        if obj.type == 'MESH' and "_original_materials" not in obj:
             materials = [slot.material.name if slot.material else None for slot in obj.material_slots]
             obj["_original_materials"] = json.dumps(materials)
             for slot in obj.material_slots:
                 if slot.material:
                     slot.material.use_fake_user = True
+            print(f"Stored original materials for {obj.name}: {materials}")
 
-    print("Original materials stored")
-
-def apply_override_material(data_block, settings):
-    override_material = settings.override_material
-
-    if not override_material or not override_active:
-        print("Override material not applied: override is not active or no override material set.")
-        return
-
-    exclude_materials = {item.material for item in settings.exclude_materials}
-
-    all_objects = get_all_objects(data_block)
-    for obj in all_objects:
+def apply_override_material(objects, override_material, exclude_materials):
+    for obj in objects:
         if obj.type == 'MESH':
             for slot in obj.material_slots:
                 if slot.material not in exclude_materials and slot.material != override_material:
-                    print(f"Overriding material in {obj.name}, slot {slot.name} from {slot.material.name if slot.material else 'None'} to {override_material.name}")
                     slot.material = override_material
-                else:
-                    print(f"Skipped material in {obj.name}, slot {slot.name}: {slot.material.name if slot.material else 'None'}")
+            print(f"Applied override material to {obj.name}")
 
-    print("Override material applied")
-
-def revert_original_materials(scene):
-    all_objects = get_all_objects(scene)
-    for obj in all_objects:
+def revert_original_materials(objects):
+    for obj in objects:
         if obj.type == 'MESH' and "_original_materials" in obj:
             original_materials = json.loads(obj["_original_materials"])
             for i, mat_name in enumerate(original_materials):
@@ -152,16 +81,17 @@ def revert_original_materials(scene):
                     obj.material_slots[i].material = bpy.data.materials.get(mat_name)
                     if obj.material_slots[i].material:
                         obj.material_slots[i].material.use_fake_user = False
+            print(f"Reverted materials for {obj.name} to {original_materials}")
             del obj["_original_materials"]
 
-    print("Original materials reverted")
-
 def pre_render_handler(scene):
-    store_original_materials(scene)
-    apply_override_material(scene, scene.advanced_material_override_settings)
+    all_objects = get_all_objects(scene) + get_instance_definition_objects()
+    store_original_materials(all_objects)
+    apply_override_material(all_objects, scene.advanced_material_override_settings.override_material, {item.material for item in scene.advanced_material_override_settings.exclude_materials})
 
 def post_render_handler(scene):
-    revert_original_materials(scene)
+    all_objects = get_all_objects(scene) + get_instance_definition_objects()
+    revert_original_materials(all_objects)
 
 def load_post_handler(dummy):
     bpy.app.timers.register(delayed_store_original_materials)
@@ -169,7 +99,8 @@ def load_post_handler(dummy):
 
 def delayed_store_original_materials():
     scene = bpy.context.scene
-    store_original_materials(scene)
+    all_objects = get_all_objects(scene) + get_instance_definition_objects()
+    store_original_materials(all_objects)
     print("Delayed store: original materials stored")
     return None  # Return None to stop the timer
 
@@ -192,13 +123,12 @@ def create_generic_material():
     else:
         print("Generic material already exists")
 
-def tag_objects_with_generic_material(data_block):
+def tag_objects_with_generic_material(objects):
     generic_material = bpy.data.materials.get("Generic")
     if not generic_material:
         return
 
-    all_objects = get_all_objects(data_block)
-    for obj in all_objects:
+    for obj in objects:
         if obj.type == 'MESH':
             if len(obj.material_slots) == 0:
                 obj.data.materials.append(generic_material)
@@ -207,6 +137,44 @@ def tag_objects_with_generic_material(data_block):
                 if not any(slot.material for slot in obj.material_slots):
                     obj.material_slots[0].material = generic_material
                     print(f"Assigned Generic material to {obj.name}")
+
+def copy_instanced_collections_to_new_collection():
+    scene = bpy.context.scene
+    new_collection = bpy.data.collections.get("Instance Definitions")
+    
+    if not new_collection:
+        new_collection = bpy.data.collections.new("Instance Definitions")
+        scene.collection.children.link(new_collection)
+    
+    settings = scene.advanced_material_override_settings
+    override_material = settings.override_material
+
+    all_objects = []
+
+    for obj in scene.objects:
+        if obj.instance_collection:
+            instance_collection_copy = obj.instance_collection.copy()
+            new_collection.children.link(instance_collection_copy)
+            bpy.ops.object.select_all(action='DESELECT')
+            bpy.context.view_layer.objects.active = None
+            bpy.context.view_layer.update()
+
+            for instance_obj in instance_collection_copy.objects:
+                if instance_obj.type == 'MESH':  # Only include mesh objects
+                    instance_obj.select_set(True)
+            bpy.ops.object.make_local(type='ALL')
+
+            # Store original materials right after making instances real
+            store_original_materials(instance_collection_copy.objects)
+
+            all_objects.extend([instance_obj for instance_obj in instance_collection_copy.objects if instance_obj.type == 'MESH'])
+            print(f"Copied and linked instance collection: {obj.name}")
+
+    store_original_materials(all_objects)
+    apply_override_material(all_objects, override_material, {item.material for item in settings.exclude_materials})
+
+    new_collection.hide_viewport = True
+    print("Instance collections copied to new collection 'Instance Definitions', overridden, and hidden from viewport")
 
 class OBJECT_OT_apply_advanced_material_override(bpy.types.Operator):
     """Apply Advanced Material Override"""
@@ -221,14 +189,13 @@ class OBJECT_OT_apply_advanced_material_override(bpy.types.Operator):
 
     def execute(self, context):
         global override_active
-        new_collection = create_instance_definition_collection(context.scene)
-        duplicate_instance_collections_to_collection(context.scene, new_collection)
-        make_instances_real_in_collection(new_collection)
-        tag_objects_with_generic_material(new_collection)  # Tag objects with Generic material in the new collection
-        store_original_materials(context.scene)
-        store_original_materials(new_collection)  # Store original materials for the new collection
+        scene = context.scene
+        copy_instanced_collections_to_new_collection()
+        all_objects = get_all_objects(scene) + get_instance_definition_objects()
+        tag_objects_with_generic_material(all_objects)  # Tag objects with Generic material
+        store_original_materials(all_objects)
         override_active = True
-        apply_override_material(new_collection, context.scene.advanced_material_override_settings)  # Apply the override to objects in the new collection
+        apply_override_material(all_objects, scene.advanced_material_override_settings.override_material, {item.material for item in scene.advanced_material_override_settings.exclude_materials})
         context.view_layer.update()
         print("Override applied")
         return {'FINISHED'}
@@ -245,14 +212,19 @@ class OBJECT_OT_cancel_advanced_material_override(bpy.types.Operator):
 
     def execute(self, context):
         global override_active
-        revert_original_materials(context.scene)
-        instance_definition_collection = context.scene.collection.children.get("Instance Definition")
-        if instance_definition_collection:
-            revert_original_materials(instance_definition_collection)  # Revert original materials for the new collection
-            bpy.data.collections.remove(instance_definition_collection, do_unlink=True)
+        scene = context.scene
+        all_objects = get_all_objects(scene) + get_instance_definition_objects()
+        revert_original_materials(all_objects)
+
+        # Delete the "Instance Definitions" collection
+        instance_definitions_collection = bpy.data.collections.get("Instance Definitions")
+        if instance_definitions_collection:
+            bpy.data.collections.remove(instance_definitions_collection)
+            print("Deleted 'Instance Definitions' collection")
+
         context.view_layer.update()
         override_active = False
-        print("Override cancelled and temporary collection deleted")
+        print("Override cancelled")
         return {'FINISHED'}
 
 class MATERIAL_OT_add_exclude_material(bpy.types.Operator):
