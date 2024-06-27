@@ -155,14 +155,18 @@ def copy_instanced_collections_to_new_collection():
         if obj.instance_collection:
             instance_collection_copy = obj.instance_collection.copy()
             new_collection.children.link(instance_collection_copy)
-            bpy.ops.object.select_all(action='DESELECT')
-            bpy.context.view_layer.objects.active = None
-            bpy.context.view_layer.update()
 
-            for instance_obj in instance_collection_copy.objects:
-                if instance_obj.type == 'MESH':  # Only include mesh objects
-                    instance_obj.select_set(True)
-            bpy.ops.object.make_local(type='ALL')
+            # Use temp override context to perform operations in the background
+            override_context = bpy.context.copy()
+            override_context['selected_objects'] = instance_collection_copy.objects
+            override_context['active_object'] = None
+
+            with bpy.context.temp_override(**override_context):
+                bpy.ops.object.select_all(action='DESELECT')
+                for instance_obj in instance_collection_copy.objects:
+                    if instance_obj.type == 'MESH':  # Only include mesh objects
+                        instance_obj.select_set(True)
+                bpy.ops.object.make_local(type='ALL')
 
             # Store original materials right after making instances real
             store_original_materials(instance_collection_copy.objects)
@@ -174,6 +178,7 @@ def copy_instanced_collections_to_new_collection():
     apply_override_material(all_objects, override_material, {item.material for item in settings.exclude_materials})
 
     new_collection.hide_viewport = True
+    new_collection.hide_select = True
     print("Instance collections copied to new collection 'Instance Definitions', overridden, and hidden from viewport")
 
 class OBJECT_OT_apply_advanced_material_override(bpy.types.Operator):
