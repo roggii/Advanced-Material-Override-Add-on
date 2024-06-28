@@ -6,7 +6,7 @@
 
 bl_info = {
     "name": "Advanced Material Override",
-    "blender": (3, 0, 0),
+    "blender": (4, 0, 0),
     "category": "Material",
     "version": (1, 0, 0),
     "author": "Nana Beniako",
@@ -48,15 +48,9 @@ def get_all_objects(scene):
             all_objects.extend(obj.instance_collection.objects)
     return all_objects
 
-def get_instance_definition_objects():
-    instance_definitions_collection = bpy.data.collections.get("Instance Definitions")
-    if instance_definitions_collection:
-        return [obj for obj in instance_definitions_collection.all_objects if obj.type in {'MESH', 'CURVE'}]
-    return []
-
 def store_original_materials(objects):
     for obj in objects:
-        if obj.type in {'MESH', 'CURVE'} and "_original_materials" not in obj:
+        if obj.type in {'MESH', 'CURVE'}:
             materials = [slot.material.name if slot.material else None for slot in obj.material_slots]
             obj["_original_materials"] = json.dumps(materials)
             for slot in obj.material_slots:
@@ -65,7 +59,7 @@ def store_original_materials(objects):
             print(f"Stored original materials for {obj.name}: {materials}")
 
             # Handle geometry nodes materials
-            geom_node_materials = []
+            geom_node_materials = {}
             for modifier in obj.modifiers:
                 if modifier.type == 'NODES' and modifier.node_group:
                     node_group = modifier.node_group
@@ -73,9 +67,10 @@ def store_original_materials(objects):
                         if node.type == 'SET_MATERIAL':
                             material = node.inputs['Material'].default_value
                             if material:
-                                geom_node_materials.append(material.name)
+                                geom_node_materials[node.name] = material.name
                                 material.use_fake_user = True
-            obj["_original_geom_node_materials"] = json.dumps(geom_node_materials)
+            if geom_node_materials:
+                obj["_original_geom_node_materials"] = json.dumps(geom_node_materials)
 
 def apply_override_material(objects, override_material, exclude_materials):
     for obj in objects:
@@ -86,15 +81,17 @@ def apply_override_material(objects, override_material, exclude_materials):
             print(f"Applied override material to {obj.name}")
 
             # Handle geometry nodes materials
-            for modifier in obj.modifiers:
-                if modifier.type == 'NODES' and modifier.node_group:
-                    node_group = modifier.node_group
-                    for node in node_group.nodes:
-                        if node.type == 'SET_MATERIAL':
-                            material = node.inputs['Material'].default_value
-                            if material and material not in exclude_materials:
-                                node.inputs['Material'].default_value = override_material
-                                print(f"Applied override material to Set Material node in {obj.name}")
+            if "_original_geom_node_materials" in obj:
+                geom_node_materials = json.loads(obj["_original_geom_node_materials"])
+                for modifier in obj.modifiers:
+                    if modifier.type == 'NODES' and modifier.node_group:
+                        node_group = modifier.node_group
+                        for node in node_group.nodes:
+                            if node.type == 'SET_MATERIAL':
+                                original_mat_name = geom_node_materials.get(node.name)
+                                if original_mat_name and bpy.data.materials.get(original_mat_name) not in exclude_materials:
+                                    node.inputs['Material'].default_value = override_material
+                                    print(f"Applied override material to Set Material node {node.name} in {obj.name}")
 
 def revert_original_materials(objects):
     for obj in objects:
@@ -116,18 +113,19 @@ def revert_original_materials(objects):
                         node_group = modifier.node_group
                         for node in node_group.nodes:
                             if node.type == 'SET_MATERIAL':
-                                original_mat_name = original_geom_node_materials.pop(0)
-                                node.inputs['Material'].default_value = bpy.data.materials.get(original_mat_name)
-                                print(f"Reverted Set Material node in {obj.name} to {original_mat_name}")
+                                original_mat_name = original_geom_node_materials.get(node.name)
+                                if original_mat_name:
+                                    node.inputs['Material'].default_value = bpy.data.materials.get(original_mat_name)
+                                    print(f"Reverted Set Material node {node.name} in {obj.name} to {original_mat_name}")
                 del obj["_original_geom_node_materials"]
 
 def pre_render_handler(scene):
-    all_objects = get_all_objects(scene) + get_instance_definition_objects()
+    all_objects = get_all_objects(scene)
     store_original_materials(all_objects)
     apply_override_material(all_objects, scene.advanced_material_override_settings.override_material, {item.material for item in scene.advanced_material_override_settings.exclude_materials})
 
 def post_render_handler(scene):
-    all_objects = get_all_objects(scene) + get_instance_definition_objects()
+    all_objects = get_all_objects(scene)
     revert_original_materials(all_objects)
 
 def load_post_handler(dummy):
@@ -136,7 +134,7 @@ def load_post_handler(dummy):
 
 def delayed_store_original_materials():
     scene = bpy.context.scene
-    all_objects = get_all_objects(scene) + get_instance_definition_objects()
+    all_objects = get_all_objects(scene)
     store_original_materials(all_objects)
     print("Delayed store: original materials stored")
     return None  # Return None to stop the timer
@@ -209,14 +207,8 @@ def copy_instanced_collections_to_new_collection():
             store_original_materials(instance_collection_copy.objects)
 
             all_objects.extend([instance_obj for instance_obj in instance_collection_copy.objects if instance_obj.type in {'MESH', 'CURVE'}])
-            print(f"Copied and linked instance collection: {obj.name}")
 
-    store_original_materials(all_objects)
-    apply_override_material(all_objects, override_material, {item.material for item in settings.exclude_materials})
-
-    new_collection.hide_viewport = True
-    new_collection.hide_select = True
-    print("Instance collections copied to new collection 'Instance Definitions', overridden, and hidden from viewport")
+    return all_objects
 
 class OBJECT_OT_apply_advanced_material_override(bpy.types.Operator):
     """Apply Advanced Material Override"""
@@ -232,8 +224,8 @@ class OBJECT_OT_apply_advanced_material_override(bpy.types.Operator):
     def execute(self, context):
         global override_active
         scene = context.scene
-        copy_instanced_collections_to_new_collection()
-        all_objects = get_all_objects(scene) + get_instance_definition_objects()
+        instanced_objects = copy_instanced_collections_to_new_collection()
+        all_objects = get_all_objects(scene) + instanced_objects
         tag_objects_with_generic_material(all_objects)  # Tag objects with Generic material
         store_original_materials(all_objects)
         override_active = True
@@ -255,7 +247,7 @@ class OBJECT_OT_cancel_advanced_material_override(bpy.types.Operator):
     def execute(self, context):
         global override_active
         scene = context.scene
-        all_objects = get_all_objects(scene) + get_instance_definition_objects()
+        all_objects = get_all_objects(scene)
         revert_original_materials(all_objects)
 
         # Delete the "Instance Definitions" collection
