@@ -181,6 +181,11 @@ def copy_instanced_collections_to_new_collection():
         new_collection = bpy.data.collections.new("Instance Definitions")
         scene.collection.children.link(new_collection)
     
+    # Hide the "Instance Definitions" collection
+    new_collection.hide_viewport = True
+    new_collection.hide_render = True
+    new_collection.hide_select = True
+
     settings = scene.advanced_material_override_settings
     override_material = settings.override_material
 
@@ -328,8 +333,9 @@ class MATERIAL_PT_override_panel(bpy.types.Panel):
 
         col = row.column(align=True)
         col.operator("material.list_action", icon='REMOVE', text="").action = 'REMOVE'
-        col.operator("material.list_action", icon='TRIA_UP', text="").action = 'UP'
-        col.operator("material.list_action", icon='TRIA_DOWN', text="").action = 'DOWN'
+        # Removed UP and DOWN buttons
+        # col.operator("material.list_action", icon='TRIA_UP', text="").action = 'UP'
+        # col.operator("material.list_action", icon='TRIA_DOWN', text="").action = 'DOWN'
 
         layout.prop(settings, "selected_material", text="Select Material to Exclude")
 
