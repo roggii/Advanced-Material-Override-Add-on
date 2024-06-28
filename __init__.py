@@ -6,7 +6,7 @@
 
 bl_info = {
     "name": "Advanced Material Override",
-    "blender": (4, 0, 0),
+    "blender": (3, 5, 0),
     "category": "Material",
     "version": (1, 0, 0),
     "author": "Nana Beniako",
