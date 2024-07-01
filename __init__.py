@@ -167,11 +167,12 @@ def tag_objects_with_generic_material(objects):
         if obj.type in {'MESH', 'CURVE'}:
             if len(obj.material_slots) == 0:
                 obj.data.materials.append(generic_material)
-                print(f"Assigned Generic material to {obj.name}")
+                print(f"Assigned Generic material to {obj.name} due to no material slots")
             else:
-                if not any(slot.material for slot in obj.material_slots):
-                    obj.material_slots[0].material = generic_material
-                    print(f"Assigned Generic material to {obj.name}")
+                for slot in obj.material_slots:
+                    if slot.material is None:
+                        slot.material = generic_material
+                        print(f"Assigned Generic material to empty slot in {obj.name}")
 
 def copy_instanced_collections_to_new_collection():
     scene = bpy.context.scene
@@ -278,6 +279,11 @@ class MATERIAL_OT_add_exclude_material(bpy.types.Operator):
     def execute(self, context):
         settings = context.scene.advanced_material_override_settings
         if settings.selected_material:
+            # Check if the material is already in the exclude list
+            for item in settings.exclude_materials:
+                if item.material == settings.selected_material:
+                    self.report({'WARNING'}, "Material is already in the exclude list")
+                    return {'CANCELLED'}
             item = settings.exclude_materials.add()
             item.material = settings.selected_material
             settings.selected_material = None
