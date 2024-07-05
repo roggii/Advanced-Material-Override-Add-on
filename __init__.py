@@ -354,8 +354,29 @@ class MATERIAL_PT_override_panel(bpy.types.Panel):
         cancel_row.enabled = OBJECT_OT_cancel_advanced_material_override.poll(context)
         cancel_row.operator("object.cancel_advanced_material_override", text="Cancel Override")
 
+        layout.separator()
+
+        row = layout.row()
+        row.operator("object.delete_empty_material_slots", text="Purge Unused Material Slots")
+
 def update_override_button(context):
     context.area.tag_redraw()
+
+class OBJECT_OT_delete_empty_material_slots(bpy.types.Operator):
+    """Delete empty material slots from all mesh objects in the scene"""
+    bl_idname = "object.delete_empty_material_slots"
+    bl_label = "Purge Unused Material Slots"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        for obj in bpy.context.scene.objects:
+            if obj.type == 'MESH':  # Only process mesh objects
+                for i in range(len(obj.material_slots) - 1, -1, -1):
+                    if obj.material_slots[i].material is None:
+                        obj.active_material_index = i
+                        bpy.ops.object.material_slot_remove({'object': obj})
+        print("Empty material slots removed from all mesh objects in the scene.")
+        return {'FINISHED'}
 
 class MATERIAL_PT_addon_preferences(bpy.types.AddonPreferences):
     bl_idname = __name__
@@ -375,6 +396,7 @@ def register():
     bpy.utils.register_class(MATERIAL_OT_add_exclude_material)
     bpy.utils.register_class(MATERIAL_OT_list_action)
     bpy.utils.register_class(MATERIAL_PT_override_panel)
+    bpy.utils.register_class(OBJECT_OT_delete_empty_material_slots)
     bpy.utils.register_class(MATERIAL_PT_addon_preferences)
 
     bpy.types.Scene.advanced_material_override_settings = bpy.props.PointerProperty(type=MaterialOverrideSettings)
@@ -393,6 +415,7 @@ def unregister():
     bpy.utils.unregister_class(MATERIAL_OT_add_exclude_material)
     bpy.utils.unregister_class(MATERIAL_OT_list_action)
     bpy.utils.unregister_class(MATERIAL_PT_override_panel)
+    bpy.utils.unregister_class(OBJECT_OT_delete_empty_material_slots)
     bpy.utils.unregister_class(MATERIAL_PT_addon_preferences)
 
     del bpy.types.Scene.advanced_material_override_settings
