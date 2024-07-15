@@ -9,7 +9,8 @@ The Advanced Material Override addon provides dynamic material overrides with an
 ## Features
 - Dynamically override materials for all objects in a scene.
 - Exclude specific materials from being overridden.
-- Stores original materials in custom properties for persistence across sessions.
+- Stores original materials for persistence across sessions.
+- Extra button to Clean unused material slots for better user experience after imports.
 
 ## Installation
 1. Download the addon.
