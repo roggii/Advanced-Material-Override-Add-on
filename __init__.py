@@ -36,10 +36,16 @@ class MATERIAL_UL_override_exclude(bpy.types.UIList):
 
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname):
         if self.layout_type in {'DEFAULT', 'COMPACT'}:
-            layout.label(text=item.material.name, icon='MATERIAL')
+            if item.material:
+                layout.label(text=item.material.name, icon='MATERIAL')
+            else:
+                layout.label(text="None", icon='MATERIAL')
         elif self.layout_type in {'GRID'}:
             layout.alignment = 'CENTER'
-            layout.label(text=item.material.name, icon='MATERIAL')
+            if item.material:
+                layout.label(text=item.material.name, icon='MATERIAL')
+            else:
+                layout.label(text="None", icon='MATERIAL')
 
 def get_all_objects(scene):
     all_objects = list(scene.objects)
@@ -216,10 +222,10 @@ def copy_instanced_collections_to_new_collection():
 
     return all_objects
 
-class OBJECT_OT_apply_advanced_material_override(bpy.types.Operator):
-    """Apply Advanced Material Override"""
-    bl_idname = "object.apply_advanced_material_override"
-    bl_label = "Apply Advanced Material Override"
+class OBJECT_OT_apply_material_override(bpy.types.Operator):
+    """Apply Material Override"""
+    bl_idname = "object.apply_material_override"
+    bl_label = "Apply Material Override"
     bl_options = {'REGISTER', 'UNDO'}
 
     @classmethod
@@ -240,10 +246,10 @@ class OBJECT_OT_apply_advanced_material_override(bpy.types.Operator):
         print("Override applied")
         return {'FINISHED'}
 
-class OBJECT_OT_cancel_advanced_material_override(bpy.types.Operator):
-    """Cancel Advanced Material Override and Restore Original Materials"""
-    bl_idname = "object.cancel_advanced_material_override"
-    bl_label = "Cancel Advanced Material Override"
+class OBJECT_OT_cancel_material_override(bpy.types.Operator):
+    """Cancel Material Override and Restore Original Materials"""
+    bl_idname = "object.cancel_material_override"
+    bl_label = "Cancel Material Override"
     bl_options = {'REGISTER', 'UNDO'}
 
     @classmethod
@@ -291,9 +297,9 @@ class MATERIAL_OT_add_exclude_material(bpy.types.Operator):
         return {'FINISHED'}
 
 class MATERIAL_OT_list_action(bpy.types.Operator):
-    """Remove materials from the exclude list"""
+    """Remove selected material from exclude list"""
     bl_idname = "material.list_action"
-    bl_label = "Material List Action"
+    bl_label = "Remove Selected Material from Exclude List"
     action: bpy.props.EnumProperty(items=(
         ('REMOVE', "Remove", ""),
         ('UP', "Up", ""),
@@ -320,6 +326,36 @@ class MATERIAL_OT_list_action(bpy.types.Operator):
         update_override_button(context)
         return {"FINISHED"}
 
+class MATERIAL_OT_sort_exclude_materials(bpy.types.Operator):
+    """Sort excluded materials alphabetically"""
+    bl_idname = "material.sort_exclude_materials"
+    bl_label = "Sort Excluded Materials"
+
+    def execute(self, context):
+        settings = context.scene.advanced_material_override_settings
+        exclude_materials_list = sorted(settings.exclude_materials, key=lambda item: (item.material.name if item.material else ""))
+
+        # Clear and re-add items to sort
+        items = [(item.material, item.name) for item in exclude_materials_list]
+        settings.exclude_materials.clear()
+        for material, name in items:
+            item = settings.exclude_materials.add()
+            item.material = material
+
+        print("Sorted exclude materials:", [item.material.name if item.material else "None" for item in settings.exclude_materials])
+        return {'FINISHED'}
+
+class MATERIAL_OT_clear_exclude_list(bpy.types.Operator):
+    """Clear all materials from the exclude list"""
+    bl_idname = "material.clear_exclude_list"
+    bl_label = "Clear Exclude List"
+
+    def execute(self, context):
+        settings = context.scene.advanced_material_override_settings
+        settings.exclude_materials.clear()
+        print("Exclude list cleared")
+        return {'FINISHED'}
+
 class MATERIAL_PT_override_panel(bpy.types.Panel):
     """Creates a Panel in the Material properties window"""
     bl_label = "Advanced Material Override"
@@ -339,20 +375,19 @@ class MATERIAL_PT_override_panel(bpy.types.Panel):
 
         col = row.column(align=True)
         col.operator("material.list_action", icon='REMOVE', text="").action = 'REMOVE'
-        # Removed UP and DOWN buttons
-        # col.operator("material.list_action", icon='TRIA_UP', text="").action = 'UP'
-        # col.operator("material.list_action", icon='TRIA_DOWN', text="").action = 'DOWN'
+        col.operator("material.sort_exclude_materials", icon='SORTALPHA', text="")
+        col.operator("material.clear_exclude_list", icon='X', text="")
 
         layout.prop(settings, "selected_material", text="Select Material to Exclude")
 
         row = layout.row()
         row.enabled = not override_active
         row.operator("material.add_exclude_material", text="Add to Exclude List")
-        row.operator("object.apply_advanced_material_override", text="Apply Override")
+        row.operator("object.apply_material_override", text="Apply Override")
 
         cancel_row = layout.row()
-        cancel_row.enabled = OBJECT_OT_cancel_advanced_material_override.poll(context)
-        cancel_row.operator("object.cancel_advanced_material_override", text="Cancel Override")
+        cancel_row.enabled = OBJECT_OT_cancel_material_override.poll(context)
+        cancel_row.operator("object.cancel_material_override", text="Cancel Override")
 
         layout.separator()
 
@@ -391,10 +426,12 @@ def register():
     bpy.utils.register_class(MaterialExcludeItem)
     bpy.utils.register_class(MaterialOverrideSettings)
     bpy.utils.register_class(MATERIAL_UL_override_exclude)
-    bpy.utils.register_class(OBJECT_OT_apply_advanced_material_override)
-    bpy.utils.register_class(OBJECT_OT_cancel_advanced_material_override)
+    bpy.utils.register_class(OBJECT_OT_apply_material_override)
+    bpy.utils.register_class(OBJECT_OT_cancel_material_override)
     bpy.utils.register_class(MATERIAL_OT_add_exclude_material)
     bpy.utils.register_class(MATERIAL_OT_list_action)
+    bpy.utils.register_class(MATERIAL_OT_sort_exclude_materials)
+    bpy.utils.register_class(MATERIAL_OT_clear_exclude_list)
     bpy.utils.register_class(MATERIAL_PT_override_panel)
     bpy.utils.register_class(OBJECT_OT_delete_empty_material_slots)
     bpy.utils.register_class(MATERIAL_PT_addon_preferences)
@@ -410,10 +447,12 @@ def unregister():
     bpy.utils.unregister_class(MaterialExcludeItem)
     bpy.utils.unregister_class(MaterialOverrideSettings)
     bpy.utils.unregister_class(MATERIAL_UL_override_exclude)
-    bpy.utils.unregister_class(OBJECT_OT_apply_advanced_material_override)
-    bpy.utils.unregister_class(OBJECT_OT_cancel_advanced_material_override)
+    bpy.utils.unregister_class(OBJECT_OT_apply_material_override)
+    bpy.utils.unregister_class(OBJECT_OT_cancel_material_override)
     bpy.utils.unregister_class(MATERIAL_OT_add_exclude_material)
     bpy.utils.unregister_class(MATERIAL_OT_list_action)
+    bpy.utils.unregister_class(MATERIAL_OT_sort_exclude_materials)
+    bpy.utils.unregister_class(MATERIAL_OT_clear_exclude_list)
     bpy.utils.unregister_class(MATERIAL_PT_override_panel)
     bpy.utils.unregister_class(OBJECT_OT_delete_empty_material_slots)
     bpy.utils.unregister_class(MATERIAL_PT_addon_preferences)
