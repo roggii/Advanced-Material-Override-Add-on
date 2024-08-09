@@ -406,10 +406,16 @@ class OBJECT_OT_delete_empty_material_slots(bpy.types.Operator):
     def execute(self, context):
         for obj in bpy.context.scene.objects:
             if obj.type == 'MESH':  # Only process mesh objects
+                # Switch to object mode if necessary
+                if bpy.context.object and bpy.context.object.mode != 'OBJECT':
+                    bpy.ops.object.mode_set(mode='OBJECT')
+
                 for i in range(len(obj.material_slots) - 1, -1, -1):
                     if obj.material_slots[i].material is None:
                         obj.active_material_index = i
-                        bpy.ops.object.material_slot_remove({'object': obj})
+                        bpy.context.view_layer.objects.active = obj  # Set the active object
+                        bpy.ops.object.material_slot_remove()  # Properly remove the material slot
+                        
         print("Empty material slots removed from all mesh objects in the scene.")
         return {'FINISHED'}
 
