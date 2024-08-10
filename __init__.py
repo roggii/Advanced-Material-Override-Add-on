@@ -17,6 +17,7 @@ bl_info = {
 
 import bpy
 import json
+import mathutils
 
 # Flag to track override status
 override_active = False
@@ -46,6 +47,12 @@ class MATERIAL_UL_override_exclude(bpy.types.UIList):
                 layout.label(text=item.material.name, icon='MATERIAL')
             else:
                 layout.label(text="None", icon='MATERIAL')
+
+def get_mesh_data(obj):
+    """Extract mesh data from an object in world coordinates."""
+    world_matrix = obj.matrix_world
+    vertices = [world_matrix @ v.co for v in obj.data.vertices]
+    return tuple(sorted((round(v.x, 5), round(v.y, 5), round(v.z, 5)) for v in vertices))
 
 def get_all_objects(scene):
     all_objects = list(scene.objects)
@@ -356,6 +363,37 @@ class MATERIAL_OT_clear_exclude_list(bpy.types.Operator):
         print("Exclude list cleared")
         return {'FINISHED'}
 
+class OBJECT_OT_purge_duplicate_geometry(bpy.types.Operator):
+    """Purge Duplicate Geometry Objects"""
+    bl_idname = "object.purge_duplicate_geometry"
+    bl_label = "Purge Duplicate Geometry"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        # Dictionary to store objects by their mesh data and location
+        object_data_dict = {}
+
+        # Iterate through all objects in the scene
+        for obj in list(bpy.context.scene.objects):
+            # Ensure the object is a mesh
+            if obj.type == 'MESH':
+                mesh_data = get_mesh_data(obj)
+                location = tuple(round(coord, 5) for coord in obj.location)
+                
+                # Combine mesh data and location as a key
+                key = (mesh_data, location)
+                
+                if key in object_data_dict:
+                    # If an object with the same mesh data and location exists, delete the duplicate
+                    print(f"Removing duplicate object: {obj.name}")
+                    bpy.data.objects.remove(obj, do_unlink=True)
+                else:
+                    # Otherwise, store this object in the dictionary
+                    object_data_dict[key] = obj
+
+        print("Duplicate geometry purge completed.")
+        return {'FINISHED'}
+
 class MATERIAL_PT_override_panel(bpy.types.Panel):
     """Creates a Panel in the Material properties window"""
     bl_label = "Advanced Material Override"
@@ -393,6 +431,9 @@ class MATERIAL_PT_override_panel(bpy.types.Panel):
 
         row = layout.row()
         row.operator("object.delete_empty_material_slots", text="Purge Unused Material Slots")
+
+        row = layout.row()
+        row.operator("object.purge_duplicate_geometry", text="Purge Duplicate Geometry")
 
 def update_override_button(context):
     context.area.tag_redraw()
@@ -440,6 +481,7 @@ def register():
     bpy.utils.register_class(MATERIAL_OT_clear_exclude_list)
     bpy.utils.register_class(MATERIAL_PT_override_panel)
     bpy.utils.register_class(OBJECT_OT_delete_empty_material_slots)
+    bpy.utils.register_class(OBJECT_OT_purge_duplicate_geometry)
     bpy.utils.register_class(MATERIAL_PT_addon_preferences)
 
     bpy.types.Scene.advanced_material_override_settings = bpy.props.PointerProperty(type=MaterialOverrideSettings)
@@ -461,6 +503,7 @@ def unregister():
     bpy.utils.unregister_class(MATERIAL_OT_clear_exclude_list)
     bpy.utils.unregister_class(MATERIAL_PT_override_panel)
     bpy.utils.unregister_class(OBJECT_OT_delete_empty_material_slots)
+    bpy.utils.unregister_class(OBJECT_OT_purge_duplicate_geometry)
     bpy.utils.unregister_class(MATERIAL_PT_addon_preferences)
 
     del bpy.types.Scene.advanced_material_override_settings
